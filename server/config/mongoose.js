@@ -1,7 +1,7 @@
 var mongoose = require("mongoose")
 var fs = require("fs")
 
-mongoose.connect("mongodb://localhost/generic_MEAN_project")
+mongoose.connect("mongodb://localhost/online_bids")
 
 var models_path = __dirname + "/../models" // If this doesn't work, use path.join()
 

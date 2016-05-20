@@ -1,0 +1,9 @@
+<h1>The Bidding Is Over!</h1>
+
+<h3>Most Recent Results</h3>
+
+<ul ng-repeat="result in results">
+	<li>Product {{result._product}}: {{result._bidder.name}} bid {{result.amount | currency:$:0}}</li>
+</ul>
+
+<a href="#/bids">Start bidding!</a>

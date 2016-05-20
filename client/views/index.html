@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title></title>
+		<style type="text/css">
+			.product{
+				display: inline-block;
+				border: 2px solid black;
+				margin: 15px;
+				padding: 10px;
+				vertical-align: top;
+			}
+
+			.product h3{
+				margin-top: 0px;
+			}
+		</style>
+		<script src="angular/angular.js"></script>
+		<script src="angular-route/angular-route.js"></script>
+		<script src="ngstorage/ngStorage.js"></script>
+		<script type="text/javascript">
+			var myApp = angular.module("myApp", ["ngRoute", "ngStorage"])
+
+			myApp.config(function($routeProvider){
+				$routeProvider
+					.when("/login", {
+						templateUrl: "partials/login.html",
+						controller: "user_loginController"
+					})
+					.when("/bids", {
+						templateUrl: "partials/bids.html",
+						controller: "bidsController"
+					})
+					.when("/results", {
+						templateUrl: "partials/results.html",
+						controller: "resultsController"
+					})
+					.otherwise({
+						redirectTo: "/login"
+					})
+			})
+
+			// Thank you to Todd Motto for an explanation of how Angular custom filters work
+			// https://toddmotto.com/everything-about-custom-filters-in-angular-js/
+			myApp.filter("search_filter", function(){
+				return function(items, val){
+					if(!val){ return items}
+					var filtered = []
+					for(var i = 0; i < items.length; i++){
+						var name = items[i]._bidder.name
+						var amt = String(items[i].amount)
+						if(name.indexOf(val) > -1 || amt.indexOf(val) > -1){
+							filtered.push(items[i])
+						}
+					}
+					return filtered
+				}
+			})
+
+			myApp.factory("userFactory", function($http){
+				var factory = {}
+
+				factory.create = function(name, callback){
+					$http.post("/users", {name: name})
+						.then(function(output){
+							var user = output
+							callback(user)
+						})
+				}
+
+				return factory
+			})
+
+			myApp.factory("bidFactory", function($http){
+				var factory = {}
+
+				factory.index = function(callback){
+					$http.get("/bids")
+						.then(function(output){
+							var bids = output
+							callback(bids)
+						})
+				}
+
+				factory.create = function(new_bid, callback){
+					$http.post("/bids", new_bid)
+						.then(function(output){
+							callback(output)
+						})
+				}
+
+				// factory.can_bid = function(){
+				// 	var a;
+				// 	$http.get("/can_bid")
+				// 		.then(function(output){
+				// 			// console.log(output)
+				// 			a = output.data.can_bid
+				// 			alert(a)
+				// 		})
+				// 	return a;
+				// }
+
+				return factory
+			})
+
+			myApp.factory("resultFactory", function($http){
+				var factory = {}
+
+				factory.create = function(new_result, callback){
+					$http.post("/results", {results: new_result})
+						.then(callback)
+				}
+
+				factory.show = function(callback){
+					$http.get("/results")
+						.then(function(output){
+							callback(output.data)
+						})
+				}
+
+				return factory
+			})
+
+			myApp.controller("user_loginController", function($scope, $sessionStorage, $location, userFactory){
+				
+				if($sessionStorage.user){
+					$location.url("/bids")
+				}
+
+				$scope.login = function(){
+					if(!$scope.curr_user) {
+						alert("Enter your name, pardner!")
+						return
+					}
+					
+					userFactory.create($scope.curr_user.name, function(data){
+						if(data.data.name=="ValidationError"){
+							//error handling
+							alert(data.data.message)
+						} else {
+							$sessionStorage.user = data.data
+							$location.url("/bids")
+						}
+					})
+				}
+			})
+
+
+			myApp.controller("bidsController", function($scope, $sessionStorage, $location, bidFactory, resultFactory){
+
+
+				function collect_bids(){
+					bidFactory.index(function(data){
+						for(var h in $scope.prods){
+							$scope.prods[h].bids = []
+						}
+
+						bids = data.data
+
+						if(bids){
+							for(var i = 0; i < bids.length; i++){
+								$scope.prods[bids[i]._product].bids.push(bids[i])
+							}
+						}
+					})
+				}
+
+				$scope.prods = {
+					1: {prod_id: 1, bids: []},
+					2: {prod_id: 2, bids: []},
+					3: {prod_id: 3, bids: []},
+				}
+				
+
+				$scope.new_bids = {}
+
+				collect_bids()
+
+				if($sessionStorage.user){
+					$scope.curr_user = $sessionStorage.user
+				} else {
+					$location.url("/login")
+				}
+
+				$scope.logout = function(){
+					delete $sessionStorage.user
+					$location.url("/login")
+				}
+
+				$scope.submit_bid = function(prod_id){
+
+					new_bid = {
+						amount: $scope.new_bids[prod_id],
+						_product: prod_id,
+						_bidder: $scope.curr_user._id
+					}
+
+					collect_bids()
+
+					var high_bid = $scope.prods[prod_id].bids[$scope.prods[prod_id].bids.length - 1]
+
+					if(high_bid){ 
+						high_bid = high_bid.amount
+					} else {
+						high_bid = 0 
+					}
+					// In case there are no bids, the formula for high_bid will return undefined, which we'll cast to 0
+
+					if(new_bid.amount <= high_bid){
+						alert("Your bid's too low, pardner!")
+						// I decided to make this a cowboy website, I guess
+						return 
+					}
+
+					bidFactory.create(new_bid, function(data){
+						// callback function, probably just collect all bid info again
+						if(data.data.status=="error"){
+							alert("Error!")
+							alert(data.data.error)
+						} else {
+							collect_bids()
+							delete $scope.new_bids[prod_id]
+						}
+					})
+				}
+
+				$scope.end_bid = function(){
+					function has_bids(prod_id){
+						return $scope.prods[prod_id].bids.length > 0
+					}
+
+					function last_bid(prod_id){
+						return $scope.prods[prod_id].bids[$scope.prods[prod_id].bids.length - 1]
+					}
+
+					if(![1,2,3].every(has_bids)){
+						alert("Not all items have bids yet, pardner")
+					} else {
+						var new_result = [1,2,3].map(last_bid)
+						console.log(new_result)
+						resultFactory.create(new_result, function(){
+							$location.url("/results")
+						})
+					}
+
+					
+					// if(!all_bids.)
+				}
+			})
+
+			myApp.controller("resultsController", function($scope, $location, resultFactory){
+				
+				function get_results(){
+					resultFactory.show(function(results){
+						$scope.results = results.results
+					})
+				}
+
+				get_results()
+
+			})
+		</script>
+	</head>
+	<body ng-app="myApp">
+		<div ng-view="">
+		</div>
+	</body>
+</html>
